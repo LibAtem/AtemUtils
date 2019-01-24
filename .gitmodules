@@ -1,0 +1,3 @@
+[submodule "LibAtem"]
+	path = LibAtem
+	url = git@github.com:LibAtem/LibAtem.git
