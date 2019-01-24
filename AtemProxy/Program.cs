@@ -5,15 +5,12 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
-using System.Text;
 using System.Threading;
 using log4net;
 using log4net.Config;
 using LibAtem;
 using LibAtem.Commands;
 using LibAtem.Commands.MixEffects;
-using LibAtem.Commands.SuperSource;
-using LibAtem.Common;
 using LibAtem.Net;
 using Newtonsoft.Json;
 
@@ -29,8 +26,12 @@ namespace AtemProxy
         private UdpClient _client;
         private IPEndPoint _clientEndpoint;
 
+        private AtemClient _atemConn;
+
         public ProxyServer(string address)
         {
+            _atemConn = new AtemClient(address);
+            
             StartReceivingFromAtem(address);
             StartReceivingFromClient();
         }
@@ -47,9 +48,13 @@ namespace AtemProxy
         private bool ShouldBlockCommand(ICommand cmd)
         {
             // Note: this can use the regular AtemClient to send random commands.
-            if (cmd is ProgramInputSetCommand)
+            if (cmd is ProgramInputSetCommand pisCmd)
+            {
+                pisCmd.Source += 1;
+                _atemConn.SendCommand(pisCmd);
                 return true;
-            
+            }
+
             return false;
         }
 
