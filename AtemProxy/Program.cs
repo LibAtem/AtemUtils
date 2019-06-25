@@ -13,27 +13,129 @@ using LibAtem.Commands;
 using LibAtem.Commands.MixEffects;
 using LibAtem.Net;
 using Newtonsoft.Json;
+using System.Collections.Concurrent;
 
 namespace AtemProxy
-{
+{ 
+    public class ProxyConnection
+    {
+        private static readonly ILog Log = LogManager.GetLogger(typeof(ProxyConnection));
+
+        private readonly ConcurrentQueue<LogItem> _logQueue;
+
+        private readonly Socket _serverSocket;
+        private readonly EndPoint _clientEndPoint;
+
+        public IPEndPoint AtemEndpoint { get; }
+        public UdpClient AtemConnection { get; }
+
+        public ProxyConnection(ConcurrentQueue<LogItem> logQueue, string address, Socket serverSocket, EndPoint clientEndpoint)
+        {
+            _logQueue = logQueue;
+            _serverSocket = serverSocket;
+            _clientEndPoint = clientEndpoint;
+
+            AtemEndpoint = new IPEndPoint(IPAddress.Parse(address), 9910);
+            AtemConnection = new UdpClient(new IPEndPoint(IPAddress.Any, 0));
+
+            StartReceivingFromAtem(address);
+        }
+
+        private void StartReceivingFromAtem(string address)
+        {
+            var thread = new Thread(() =>
+            {
+                while (true)
+                {
+                    try
+                    {
+                        IPEndPoint ep = AtemEndpoint;
+                        byte[] data = AtemConnection.Receive(ref ep);
+
+                        //Log.InfoFormat("Got message from atem. {0} bytes", data.Length);
+
+                        _logQueue.Enqueue(new LogItem()
+                        {
+                            IsSend = false,
+                            Payload = data
+                        });
+
+                        try
+                        {
+                            _serverSocket.SendTo(data, SocketFlags.None, _clientEndPoint);
+                        }
+                        catch (ObjectDisposedException)
+                        {
+                            Log.ErrorFormat("{0} - Discarding message due to socket being disposed", _clientEndPoint);
+                        }
+                    }
+                    catch (SocketException)
+                    {
+                        Log.ErrorFormat("Socket Exception");
+                    }
+                }
+            });
+            thread.Start();
+        }
+    }
+
+    public class LogItem
+    {
+        public bool IsSend { get; set; }
+        public byte[] Payload { get; set; }
+    }
+
     public class ProxyServer
     {
         private static readonly ILog Log = LogManager.GetLogger(typeof(ProxyServer));
 
         private Socket _socket;
-        private EndPoint _serverEndpoint;
-        
-        private UdpClient _client;
-        private IPEndPoint _clientEndpoint;
 
-        private AtemClient _atemConn;
+        private Dictionary<string, ProxyConnection> _clients = new Dictionary<string, ProxyConnection>();
+
+        private ConcurrentQueue<LogItem> _logQueue = new ConcurrentQueue<LogItem>();
 
         public ProxyServer(string address)
         {
-            _atemConn = new AtemClient(address);
-            
-            StartReceivingFromAtem(address);
-            StartReceivingFromClient();
+            // TODO - need to clean out stale clients
+
+            StartLogWriter();
+            StartReceivingFromClients(address);
+        }
+
+        private void StartLogWriter()
+        {
+            var thread = new Thread(() =>
+            {
+                while(true)
+                {
+                    if (!_logQueue.TryDequeue(out LogItem item))
+                    {
+                        Thread.Sleep(5);
+                        continue;
+                    }
+
+                    var packet = new ReceivedPacket(item.Payload);
+                    if (packet.CommandCode.HasFlag(ReceivedPacket.CommandCodeFlags.AckRequest) &&
+                        !packet.CommandCode.HasFlag(ReceivedPacket.CommandCodeFlags.Handshake))
+                    {
+                        string dirStr = item.IsSend ? "Send" : "Recv";
+                        // Handle this further
+                        foreach (var rawCmd in packet.Commands)
+                        {
+                            var cmd = CommandParser.Parse(rawCmd);
+                            if (cmd != null)
+                            {
+                                Log.InfoFormat("{0} {1} {2} ({3})", dirStr, rawCmd.Name, JsonConvert.SerializeObject(cmd), BitConverter.ToString(rawCmd.Body));
+                            } else
+                            {
+                                Log.InfoFormat("{0} unknown {1} {2}", dirStr, rawCmd.Name, BitConverter.ToString(rawCmd.Body));
+                            }
+                        }
+                    }
+                }
+            });
+            thread.Start();
         }
 
         private static Socket CreateSocket()
@@ -45,20 +147,7 @@ namespace AtemProxy
             return serverSocket;
         }
 
-        private bool ShouldBlockCommand(ICommand cmd)
-        {
-            // Note: this can use the regular AtemClient to send random commands.
-            if (cmd is ProgramInputSetCommand pisCmd)
-            {
-                pisCmd.Source += 1;
-                _atemConn.SendCommand(pisCmd);
-                return true;
-            }
-
-            return false;
-        }
-
-        private void StartReceivingFromClient()
+        private void StartReceivingFromClients(string address)
         {
             _socket = CreateSocket();
             
@@ -72,64 +161,34 @@ namespace AtemProxy
                         ArraySegment<byte> buff = new ArraySegment<byte>(new byte[2500]);
                         var end = new IPEndPoint(IPAddress.Any, 0);
                         SocketReceiveFromResult v = await _socket.ReceiveFromAsync(buff, SocketFlags.None, end);
-                        
-                        if (_serverEndpoint == default(EndPoint))
-                            _serverEndpoint = v.RemoteEndPoint;
-                        
-                        Log.InfoFormat("Got message from client: {0}", v.RemoteEndPoint);
 
-                        if (_serverEndpoint.ToString() != v.RemoteEndPoint.ToString())
+                        string epStr = v.RemoteEndPoint.ToString();
+                        if (!_clients.TryGetValue(epStr, out ProxyConnection client))
                         {
-                            Log.InfoFormat("Got connection attempt from new client");
-                            continue;
+                            Log.InfoFormat("Got connection from new client: {0}", epStr);
+                            client = new ProxyConnection(_logQueue, address, _socket, v.RemoteEndPoint);
+                            _clients.Add(epStr, client);
                         }
                         
-                        Log.InfoFormat("Got message from client. {0} bytes", v.ReceivedBytes);
+                        //Log.InfoFormat("Got message from client. {0} bytes", v.ReceivedBytes);
 
                         var resBuff = buff.ToArray();
                         var resSize = v.ReceivedBytes;
-                        
-                        var packet = new ReceivedPacket(resBuff);
-                        if (packet.CommandCode.HasFlag(ReceivedPacket.CommandCodeFlags.AckRequest) &&
-                            !packet.CommandCode.HasFlag(ReceivedPacket.CommandCodeFlags.Handshake))
+
+                        _logQueue.Enqueue(new LogItem()
                         {
-                            // Handle this further
-                            var allowedCommands = new List<ParsedCommand>();
-                            bool changedCommands = false;
-                            foreach (var rawCmd in packet.Commands)
-                            {
-                                var cmd = CommandParser.Parse(rawCmd);
-                                if (cmd == null || !ShouldBlockCommand(cmd))
-                                {
-                                    allowedCommands.Add(rawCmd);
-                                }
-                                else
-                                {
-                                    changedCommands = true;
-                                }
-                            }
-
-                            // 0 length commands are allowed, so don't bother checking for empty
-
-                            if (changedCommands)
-                            {
-                                resBuff = CompileMessage(packet, allowedCommands);
-                                resSize = resBuff.Length;
-                            }
-                        }
-                        
+                            IsSend = true,
+                            Payload = resBuff
+                        });
                         
                         try
                         {
-                            //_client.Client.SendTo(buff.Array, SocketFlags.None, _clientEndpoint);
-                            _client.Send(resBuff, resSize, _clientEndpoint);
+                            client.AtemConnection.Send(resBuff, resSize, client.AtemEndpoint);
                         }
                         catch (ObjectDisposedException)
                         {
-                            Log.ErrorFormat("{0} - Discarding message due to socket being disposed", _clientEndpoint);
+                            Log.ErrorFormat("{0} - Discarding message due to socket being disposed", client.AtemEndpoint);
                         }
-                        
-                        
                     }
                     catch (SocketException)
                     {
@@ -138,74 +197,6 @@ namespace AtemProxy
                     }
                 }
             });
-            thread.Start();
-        }
-        
-        private byte[] CompileMessage(ReceivedPacket origPacket, List<ParsedCommand> commands)
-        {
-            byte[] payload = new byte[0];
-            commands.ForEach(c =>
-            {
-                var b = new CommandBuilder(c.Name);
-                b.AddByte(c.Body);
-                payload = payload.Concat(b.ToByteArray()).ToArray();
-            });
-            
-            byte opcode = (byte)origPacket.CommandCode;
-            byte len1 = (byte)((ReceivedPacket.HeaderLength + payload.Length) / 256 | opcode << 3); // opcode 0x08 + length
-            byte len2 = (byte)((ReceivedPacket.HeaderLength + payload.Length) % 256);
-
-            byte[] buffer =
-            {
-                len1, len2, // Opcode & Length
-                (byte)(origPacket.SessionId / 256),  (byte)(origPacket.SessionId % 256), // session id
-                0x00, 0x00, // ACKed Pkt Id
-                0x00, 0x00, // Unknown
-                0x00, 0x00, // unknown2
-                (byte)(origPacket.PacketId / 256),  (byte)(origPacket.PacketId % 256), // pkt id
-            };
-
-            // If no payload, dont append it
-            if (payload.Length == 0)
-                return buffer;
-
-            return buffer.Concat(payload).ToArray();
-        }
-        
-        
-        private void StartReceivingFromAtem(string address)
-        {
-            _clientEndpoint = new IPEndPoint(IPAddress.Parse(address), 9910);
-            _client = new UdpClient(new IPEndPoint(IPAddress.Any, 0));
-            
-            var thread = new Thread(() =>
-            {
-                while (true)
-                {
-                    try
-                    {
-                        IPEndPoint ep = _clientEndpoint;
-                        byte[] data = _client.Receive(ref ep);
-                        
-                        Log.InfoFormat("Got message from atem. {0} bytes", data.Length);
-                        
-                        try
-                        {
-                            // This can send everything back, as we only want to be able to intercept commands sent to the atem
-                            _socket.SendTo(data, SocketFlags.None, _serverEndpoint);
-                        }
-                        catch (ObjectDisposedException)
-                        {
-                            Log.ErrorFormat("{0} - Discarding message due to socket being disposed", _serverEndpoint);
-                        }
-                    }
-                    catch (SocketException)
-                    {
-                        Log.ErrorFormat("Socket Exception");
-                    }
-                }
-            });
-            thread.Name = "LibAtem.Receive";
             thread.Start();
         }
     }
@@ -221,59 +212,8 @@ namespace AtemProxy
             log.Info("Starting");
 
             Config config = JsonConvert.DeserializeObject<Config>(File.ReadAllText("config.json"));
-            //var client = new AtemClient(config.AtemAddress);
 
             var server = new ProxyServer(config.AtemAddress);
-            
-            
-            ConsoleKeyInfo key;
-            Console.WriteLine("Press escape to exit");
-            while ((key = Console.ReadKey()).Key != ConsoleKey.Escape)
-            {
-                /*
-                if (config.MixEffect != null)
-                {
-                    foreach (KeyValuePair<MixEffectBlockId, Config.MixEffectConfig> me in config.MixEffect)
-                    {
-                        if (me.Value.Program != null && me.Value.Program.TryGetValue(key.KeyChar, out VideoSource src))
-                            client.SendCommand(new ProgramInputSetCommand {Index = me.Key, Source = src});
-
-                        if (me.Value.Preview != null && me.Value.Preview.TryGetValue(key.KeyChar, out src))
-                            client.SendCommand(new PreviewInputSetCommand {Index = me.Key, Source = src});
-
-                        if (me.Value.Cut == key.KeyChar)
-                            client.SendCommand(new MixEffectCutCommand {Index = me.Key});
-                        if (me.Value.Auto == key.KeyChar)
-                            client.SendCommand(new MixEffectAutoCommand {Index = me.Key});
-                    }
-                }
-
-                if (config.Auxiliary != null)
-                {
-                    foreach (KeyValuePair<AuxiliaryId, Dictionary<char, VideoSource>> aux in config.Auxiliary)
-                    {
-                        if (aux.Value == null)
-                            continue;
-
-                        if (aux.Value.TryGetValue(key.KeyChar, out VideoSource src))
-                            client.SendCommand(new AuxSourceSetCommand {Id = aux.Key, Source = src});
-                    }
-                }
-
-                if (config.SuperSource != null)
-                {
-                    foreach (KeyValuePair<SuperSourceBoxId, Dictionary<char, VideoSource>> box in config.SuperSource)
-                    {
-                        if (box.Value == null)
-                            continue;
-
-                        if (box.Value.TryGetValue(key.KeyChar, out VideoSource src))
-                            client.SendCommand(new SuperSourceBoxSetCommand {Mask = SuperSourceBoxSetCommand.MaskFlags.Source, Index = box.Key, Source = src});
-                    }
-                }
-
-*/
-            }
         }
     }
 }
