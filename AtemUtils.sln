@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LibAtem", "LibAtem\LibAtem\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AtemProxy", "AtemProxy\AtemProxy.csproj", "{857C2D42-4FCE-49F6-9D7A-EDEEC2EB6E90}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AtemMock", "AtemMock\AtemMock.csproj", "{863D39C2-0DAC-4C94-80EB-0F07F24A061D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,10 @@ Global
 		{857C2D42-4FCE-49F6-9D7A-EDEEC2EB6E90}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{857C2D42-4FCE-49F6-9D7A-EDEEC2EB6E90}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{857C2D42-4FCE-49F6-9D7A-EDEEC2EB6E90}.Release|Any CPU.Build.0 = Release|Any CPU
+		{863D39C2-0DAC-4C94-80EB-0F07F24A061D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{863D39C2-0DAC-4C94-80EB-0F07F24A061D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{863D39C2-0DAC-4C94-80EB-0F07F24A061D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{863D39C2-0DAC-4C94-80EB-0F07F24A061D}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
