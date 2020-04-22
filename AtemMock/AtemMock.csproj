@@ -23,6 +23,9 @@
       <None Update="8.0.0-tvs-hd.pcapng">
         <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       </None>
+      <None Update="mini-pro-v8.2.data">
+        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </None>
     </ItemGroup>
 
     <ItemGroup>

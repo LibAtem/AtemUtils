@@ -1,9 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using LibAtem;
 using LibAtem.Commands;
+using LibAtem.Commands.DeviceProfile;
 using LibAtem.Net;
+using LibAtem.Util;
 using Newtonsoft.Json;
 using PcapngFile;
 
@@ -19,17 +22,37 @@ namespace AtemMock
             if (!logRepository.Configured) // Default to all on the console
                 BasicConfigurator.Configure(logRepository);
             */
-            
-            var version = ProtocolVersion.V8_0_1;
-            var initPackets = ParseCommands(version, "atem-constellation-8.0.2.pcapng");
+
+            //var initPackets = ParseCommands("mini-v8.1.data");
+            //var initPackets = ParseCommands("tvshd-v8.1.0.data");
+            //var initPackets = ParseCommands("tvshd-v8.2_new.data");
+            //var initPackets = ParseCommands("2me4k-v8.0.1.data");
+            var initPackets = ParseCommands("mini-pro-v8.2.data");
+            //var initPackets = ParseCommands(version, "constellation-v8.0.2.data");
+            //var initPackets = ParseCommands(version, "2me-v8.1.data");
             Console.WriteLine("Loaded {0} packets", initPackets.Count);
+
+            ParsedCommand rawVersionCommand = initPackets.SelectMany(pkt => pkt.Where(cmd => cmd.Name == "_ver")).Single();
+            VersionCommand versionCommand = (VersionCommand)CommandParser.Parse(ProtocolVersion.Minimum, rawVersionCommand);
+            ProtocolVersion version = versionCommand.ProtocolVersion;
 
             var moddedPackets = initPackets.Select(pkt =>
             {
-                return pkt.Commands.SelectMany(cmd =>
+                return pkt.SelectMany(cmd =>
                 {
                     var builder = new CommandBuilder(cmd.Name);
                     builder.AddByte(cmd.Body);
+
+                    if (cmd.Name == "FASP")
+                    {
+                        // TODO - Fairlight AFV hard cut vs transition when switching
+                        //builder.SetByte(0, new byte[] { 0x01 });
+                        //builder.SetByte(16, new byte[] { 0x10 }); // some kind of type column. This hides all the faders...
+                        //builder.SetByte(19, new byte[] { 0x03 });
+                        //builder.SetByte(18, new byte[] { 0x10 }); // Current delay
+                        //builder.SetByte(24, new byte[] { 0x01 });
+                    }
+                    else
 
                     // TODO - do any mods here
                     if (cmd.Name == "_top")
@@ -49,7 +72,7 @@ namespace AtemMock
                         Console.WriteLine("TopologyCommand: {0}", JsonConvert.SerializeObject(cmd2));
                     } else if (cmd.Name == "_MvC")
                     {
-                        //builder.SetByte(2, new byte[] { 0x00 });
+                        builder.SetByte(4, new byte[] { 0x01 });
                         
                         var cmd2 = CommandParser.Parse(version, cmd);
                         
@@ -71,50 +94,22 @@ namespace AtemMock
             Console.WriteLine("Press any key to terminate...");
             Console.ReadKey(); // Pause until keypress
         }
-        
-        
-        private static List<ReceivedPacket> ParseCommands(ProtocolVersion version, string filename)
+
+        private static List<List<ParsedCommand>> ParseCommands(string filename)
         {
-            var res = new List<ReceivedPacket>();
+            var res = new List<List<ParsedCommand>>();
 
-            using (var reader = new Reader(filename))
+            using (var reader = new StreamReader(filename))
             {
-                foreach (var readBlock in reader.EnhancedPacketBlocks)
+                string line;
+                while ((line = reader.ReadLine()) != null)
                 {
-                    var pkt = ParseEnhancedBlock(version, readBlock as EnhancedPacketBlock);
-                    if (pkt != null)
-                    {
-                        res.Add(pkt);
-                        if (pkt.Commands.Any(cmd => cmd.Name == "InCm"))
-                        {
-                            // Init complete
-                            break;
-                        }
-
-                    }
+                    var commands = ReceivedPacket.ParseCommands(line.HexToByteArray());
+                    res.Add(commands.ToList());
                 }
             }
 
             return res;
         }
-
-        private static ReceivedPacket ParseEnhancedBlock(ProtocolVersion version, EnhancedPacketBlock block)
-        {
-            byte[] data = block.Data;
-
-            // Perform some basic checks, to ensure data looks like it could be ATEM
-            if (data[23] != 17)
-                throw new ArgumentOutOfRangeException("Found packet that appears to not be UDP");
-            if ((data[36] << 8) + data[37] != 9910 && (data[34] << 8) + data[35] != 9910)
-                throw new ArgumentOutOfRangeException("Found packet that has wrong UDP port");
-
-            data = data.Skip(42).ToArray();
-            var packet = new ReceivedPacket(data);
-            if (!packet.CommandCode.HasFlag(ReceivedPacket.CommandCodeFlags.AckRequest))
-                return null;
-
-            return packet;
-        }
-
     }
 }
