@@ -8,7 +8,6 @@ using LibAtem.Commands.DeviceProfile;
 using LibAtem.Net;
 using LibAtem.Util;
 using Newtonsoft.Json;
-using PcapngFile;
 
 namespace AtemMock
 {
@@ -27,10 +26,14 @@ namespace AtemMock
             //var initPackets = ParseCommands("tvshd-v8.1.0.data");
             //var initPackets = ParseCommands("tvshd-v8.2_new.data");
             //var initPackets = ParseCommands("2me4k-v8.0.1.data");
-            var initPackets = ParseCommands("mini-pro-v8.2.data");
-            //var initPackets = ParseCommands(version, "constellation-v8.0.2.data");
+            //var initPackets = ParseCommands("mini-pro-v8.2.data");
+            var initPackets = ParseCommands("Constellation-8.2.3.data");
+            //var initPackets = ParseCommands("constellation-v8.0.2.data");
             //var initPackets = ParseCommands(version, "2me-v8.1.data");
             Console.WriteLine("Loaded {0} packets", initPackets.Count);
+
+            ParsedCommand rawNameCommand = initPackets.SelectMany(pkt => pkt.Where(cmd => cmd.Name == "_pin")).Single();
+            ProductIdentifierCommand nameCommand = (ProductIdentifierCommand)CommandParser.Parse(ProtocolVersion.Minimum, rawNameCommand);
 
             ParsedCommand rawVersionCommand = initPackets.SelectMany(pkt => pkt.Where(cmd => cmd.Name == "_ver")).Single();
             VersionCommand versionCommand = (VersionCommand)CommandParser.Parse(ProtocolVersion.Minimum, rawVersionCommand);
@@ -65,14 +68,14 @@ namespace AtemMock
                         //builder.SetByte(9, new byte[] { 0x00 });
                         //builder.SetByte(17, new byte[] { 0x00 }); // Camera control
                         //builder.SetByte(21, new byte[] { 0x00 });
-                        //builder.SetByte(20, new byte[] { 0x00 });
+                        //builder.SetByte(6, new byte[] { 0x00 });
                         
                         var cmd2 = CommandParser.Parse(version, cmd);
                         
                         Console.WriteLine("TopologyCommand: {0}", JsonConvert.SerializeObject(cmd2));
                     } else if (cmd.Name == "_MvC")
                     {
-                        builder.SetByte(4, new byte[] { 0x01 });
+                        //builder.SetByte(4, new byte[] { 0x01 });
                         
                         var cmd2 = CommandParser.Parse(version, cmd);
                         
@@ -80,6 +83,13 @@ namespace AtemMock
                     } else if (cmd.Name == "TDvP")
                     {
                         Console.WriteLine("TDvP: {0}", JsonConvert.SerializeObject(cmd));
+
+                    }
+                    else if (cmd.Name == "AuxS")
+                    {
+                        //builder.SetByte(2, new byte[] { 0x00, 0x01 });
+                        var cmd2 = CommandParser.Parse(version, cmd);
+                        Console.WriteLine("AuxS: {0}", JsonConvert.SerializeObject(cmd2));
 
                     }
 
@@ -90,7 +100,12 @@ namespace AtemMock
             var server = new AtemServer(moddedPackets);
             server.StartReceive();
             server.StartPingTimer();
-            
+
+            var modelNameAndVersion =
+                $"{nameCommand.Name} {versionCommand.ProtocolVersion.ToVersionString().Replace('.', '-')}";
+            server.StartAnnounce(modelNameAndVersion, modelNameAndVersion.GetHashCode().ToString());
+
+
             Console.WriteLine("Press any key to terminate...");
             Console.ReadKey(); // Pause until keypress
         }

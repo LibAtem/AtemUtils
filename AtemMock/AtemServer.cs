@@ -1,12 +1,15 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using log4net;
 using LibAtem.Commands;
+using LibAtem.Discovery;
 using LibAtem.Net;
+using Makaretu.Dns;
 
 namespace AtemMock
 {
@@ -18,14 +21,80 @@ namespace AtemMock
         private readonly IReadOnlyList<byte[]> _state;
 
         private Socket _socket;
+        private readonly MulticastService _mdns;
 
         // TODO - remove this list, and replace with something more sensible...
         private readonly List<Timer> timers = new List<Timer>();
 
         public AtemServer(IReadOnlyList<byte[]> state)
         {
+            _mdns = new MulticastService();
+
             _state = state;
             _connections = new AtemConnectionList();
+        }
+
+        public void StartAnnounce(string modelName, string deviceId)
+        {
+            _mdns.UseIpv4 = true;
+            _mdns.UseIpv6 = false;
+
+            var safeModelName = modelName.Replace(' ', '-').ToUpper();
+
+            var domain = new DomainName($"Mock {modelName}.{AtemDeviceInfo.ServiceName}");
+            var deviceDomain = new DomainName($"MOCK-{safeModelName}-{deviceId}.local");
+
+            _mdns.QueryReceived += (s, e) =>
+            {
+                var msg = e.Message;
+                if (msg.Questions.Any(q => q.Name == AtemDeviceInfo.ServiceName))
+                {
+                    var res = msg.CreateResponse();
+                    var addresses = MulticastService.GetIPAddresses()
+                        .Where(ip => ip.AddressFamily == AddressFamily.InterNetwork);
+                    foreach (var address in addresses)
+                    {
+                        res.Answers.Add(new PTRRecord
+                        {
+                            Name = AtemDeviceInfo.ServiceName,
+                            DomainName = domain
+                        });
+                        res.AdditionalRecords.Add(new TXTRecord
+                        {
+                            Name = domain,
+                            Strings = new List<string>
+                            {
+                                "txtvers=1",
+                                $"name=Mock Blackmagic {modelName}",
+                                "class=AtemSwitcher",
+                                "protocol version=0.0",
+                                "internal version=FAKE",
+                                $"unique id={deviceId}"
+                            }
+                        });
+                        res.AdditionalRecords.Add(new ARecord
+                        {
+                            Address = address,
+                            Name = deviceDomain,
+                        });
+                        res.AdditionalRecords.Add(new SRVRecord
+                        {
+                            Name = domain,
+                            Port = 9910,
+                            Priority = 0,
+                            Target = deviceDomain,
+                            Weight = 0
+                        });
+                        /*
+                        res.AdditionalRecords.Add(new NSECRecord
+                        {
+                            Name = domain
+                        });*/
+                    }
+                    _mdns.SendAnswer(res);
+                }
+            };
+            _mdns.Start();
         }
 
         public void StartPingTimer()
@@ -87,8 +156,9 @@ namespace AtemMock
                                 while (!conn.HasTimedOut)
                                 {
                                     conn.TrySendQueued(_socket);
-                                    Task.Delay(3).Wait();
+                                    Task.Delay(1).Wait();
                                 }
+                                Console.WriteLine("send finished");
                             });
                             sendThread.Start();
 
@@ -141,6 +211,7 @@ namespace AtemMock
                 }
 
                 Log.InfoFormat("Sent all data to {0}", conn.Endpoint);
+                //conn.QueueMessage(new OutboundMessage(OutboundMessage.OutboundMessageType.Ping, new byte [0]));
             }
             catch (Exception e)
             {
