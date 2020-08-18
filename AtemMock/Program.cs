@@ -32,10 +32,10 @@ namespace AtemMock
             //var initPackets = ParseCommands(version, "2me-v8.1.data");
             Console.WriteLine("Loaded {0} packets", initPackets.Count);
 
-            ParsedCommand rawNameCommand = initPackets.SelectMany(pkt => pkt.Where(cmd => cmd.Name == "_pin")).Single();
+            ParsedCommandSpec rawNameCommand = initPackets.SelectMany(pkt => pkt.Where(cmd => cmd.Name == "_pin")).Single();
             ProductIdentifierCommand nameCommand = (ProductIdentifierCommand)CommandParser.Parse(ProtocolVersion.Minimum, rawNameCommand);
 
-            ParsedCommand rawVersionCommand = initPackets.SelectMany(pkt => pkt.Where(cmd => cmd.Name == "_ver")).Single();
+            ParsedCommandSpec rawVersionCommand = initPackets.SelectMany(pkt => pkt.Where(cmd => cmd.Name == "_ver")).Single();
             VersionCommand versionCommand = (VersionCommand)CommandParser.Parse(ProtocolVersion.Minimum, rawVersionCommand);
             ProtocolVersion version = versionCommand.ProtocolVersion;
 
@@ -110,9 +110,9 @@ namespace AtemMock
             Console.ReadKey(); // Pause until keypress
         }
 
-        private static List<List<ParsedCommand>> ParseCommands(string filename)
+        private static List<List<ParsedCommandSpec>> ParseCommands(string filename)
         {
-            var res = new List<List<ParsedCommand>>();
+            var res = new List<List<ParsedCommandSpec>>();
 
             using (var reader = new StreamReader(filename))
             {

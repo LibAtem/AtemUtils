@@ -106,7 +106,7 @@ namespace AtemProxy
             return false;
         }
 
-        private byte[] ParsedCommandToBytes(ParsedCommand cmd)
+        private byte[] ParsedCommandToBytes(ParsedCommandSpec cmd)
         {
             var build = new CommandBuilder(cmd.Name);
             build.AddByte(cmd.Body);
@@ -166,7 +166,7 @@ namespace AtemProxy
                                         ProxyServer.Version = vcmd.ProtocolVersion;
                                     }
 
-                                    var name = CommandNameAttribute.GetNameAndVersion(cmd.GetType());
+                                    var name = CommandManager.FindNameAndVersionForType(cmd);
                                     // Log.InfoFormat("Recv {0} {1}", name.Item1, JsonConvert.SerializeObject(cmd));
 
                                     if (MutateServerCommand(cmd))
