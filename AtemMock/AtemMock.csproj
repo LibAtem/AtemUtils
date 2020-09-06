@@ -26,6 +26,9 @@
       <None Update="mini-pro-v8.2.data">
         <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       </None>
+      <None Update="log4net.config">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </None>
     </ItemGroup>
 
     <ItemGroup>

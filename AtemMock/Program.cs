@@ -8,6 +8,9 @@ using LibAtem.Commands.DeviceProfile;
 using LibAtem.Net;
 using LibAtem.Util;
 using Newtonsoft.Json;
+using log4net;
+using log4net.Config;
+using System.Reflection;
 
 namespace AtemMock
 {
@@ -15,21 +18,20 @@ namespace AtemMock
     {
         static void Main(string[] args)
         {
-            /*
             var logRepository = LogManager.GetRepository(Assembly.GetEntryAssembly());
             XmlConfigurator.Configure(logRepository, new FileInfo("log4net.config"));
             if (!logRepository.Configured) // Default to all on the console
                 BasicConfigurator.Configure(logRepository);
-            */
 
             //var initPackets = ParseCommands("mini-v8.1.data");
             //var initPackets = ParseCommands("tvshd-v8.1.0.data");
             //var initPackets = ParseCommands("tvshd-v8.2_new.data");
             //var initPackets = ParseCommands("2me4k-v8.0.1.data");
             //var initPackets = ParseCommands("mini-pro-v8.2.data");
-            var initPackets = ParseCommands("Constellation-8.2.3.data");
+            //var initPackets = ParseCommands("constellation-v8.2.3.data");
             //var initPackets = ParseCommands("constellation-v8.0.2.data");
             //var initPackets = ParseCommands(version, "2me-v8.1.data");
+            var initPackets = ParseCommands(args[0]);
             Console.WriteLine("Loaded {0} packets", initPackets.Count);
 
             ParsedCommandSpec rawNameCommand = initPackets.SelectMany(pkt => pkt.Where(cmd => cmd.Name == "_pin")).Single();
@@ -45,6 +47,8 @@ namespace AtemMock
                 {
                     var builder = new CommandBuilder(cmd.Name);
                     builder.AddByte(cmd.Body);
+                    
+                    /*
 
                     if (cmd.Name == "FASP")
                     {
@@ -92,7 +96,8 @@ namespace AtemMock
                         Console.WriteLine("AuxS: {0}", JsonConvert.SerializeObject(cmd2));
 
                     }
-
+                    
+                    */
                     return builder.ToByteArray();
                 }).ToArray();
             }).ToList();

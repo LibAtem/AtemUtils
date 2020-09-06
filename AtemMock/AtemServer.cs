@@ -65,7 +65,7 @@ namespace AtemMock
                             Strings = new List<string>
                             {
                                 "txtvers=1",
-                                $"name=Mock Blackmagic {modelName}",
+                                $"name=Blackmagic {modelName}",
                                 "class=AtemSwitcher",
                                 "protocol version=0.0",
                                 "internal version=FAKE",
