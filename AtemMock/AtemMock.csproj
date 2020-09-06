@@ -11,21 +11,6 @@
     </ItemGroup>
 
     <ItemGroup>
-      <None Update="atem-constellation-8.0.2.pcapng">
-        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-      </None>
-      <None Update="7.2-ps4k.pcapng">
-        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-      </None>
-      <None Update="7.5.2-4me.pcapng">
-        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-      </None>
-      <None Update="8.0.0-tvs-hd.pcapng">
-        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-      </None>
-      <None Update="mini-pro-v8.2.data">
-        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-      </None>
       <None Update="log4net.config">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </None>
