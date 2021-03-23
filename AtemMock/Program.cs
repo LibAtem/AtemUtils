@@ -11,6 +11,7 @@ using Newtonsoft.Json;
 using log4net;
 using log4net.Config;
 using System.Reflection;
+using System.Threading;
 
 namespace AtemMock
 {
@@ -111,8 +112,20 @@ namespace AtemMock
             server.StartAnnounce(modelNameAndVersion, modelNameAndVersion.GetHashCode().ToString());
 
 
-            Console.WriteLine("Press any key to terminate...");
-            Console.ReadKey(); // Pause until keypress
+            Console.WriteLine("Press Ctrl+C to terminate...");
+            
+            AutoResetEvent waitHandle = new AutoResetEvent(false);
+            // Handle Control+C or Control+Break
+            Console.CancelKeyPress += (o, e) =>
+            {
+                Console.WriteLine("Exit");
+
+                // Allow the manin thread to continue and exit...
+                waitHandle.Set();
+            };
+
+            // Wait
+            waitHandle.WaitOne();
         }
 
         private static List<List<ParsedCommandSpec>> ParseCommands(string filename)
