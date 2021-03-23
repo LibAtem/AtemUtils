@@ -43,58 +43,70 @@ namespace AtemMock
 
             var domain = new DomainName($"Mock {modelName}.{AtemDeviceInfo.ServiceName}");
             var deviceDomain = new DomainName($"MOCK-{safeModelName}-{deviceId}.local");
+            
+            timers.Add(new Timer(o =>
+            {
+                Log.Info("MDNS announce");
+                DoAnnounce(deviceId, modelName, domain, deviceDomain);
+            }, null, 0, 10000));
 
             _mdns.QueryReceived += (s, e) =>
             {
                 var msg = e.Message;
                 if (msg.Questions.Any(q => q.Name == AtemDeviceInfo.ServiceName))
                 {
-                    var res = msg.CreateResponse();
-                    var addresses = MulticastService.GetIPAddresses()
-                        .Where(ip => ip.AddressFamily == AddressFamily.InterNetwork);
-                    foreach (var address in addresses)
-                    {
-                        res.Answers.Add(new PTRRecord
-                        {
-                            Name = AtemDeviceInfo.ServiceName,
-                            DomainName = domain
-                        });
-                        res.AdditionalRecords.Add(new TXTRecord
-                        {
-                            Name = domain,
-                            Strings = new List<string>
-                            {
-                                "txtvers=1",
-                                $"name=Blackmagic {modelName}",
-                                "class=AtemSwitcher",
-                                "protocol version=0.0",
-                                "internal version=FAKE",
-                                $"unique id={deviceId}"
-                            }
-                        });
-                        res.AdditionalRecords.Add(new ARecord
-                        {
-                            Address = address,
-                            Name = deviceDomain,
-                        });
-                        res.AdditionalRecords.Add(new SRVRecord
-                        {
-                            Name = domain,
-                            Port = 9910,
-                            Priority = 0,
-                            Target = deviceDomain,
-                            Weight = 0
-                        });
-                        /*
-                        res.AdditionalRecords.Add(new NSECRecord
-                        {
-                            Name = domain
-                        });*/
-                    }
-                    _mdns.SendAnswer(res);
+                    Log.Debug("MDNS query");
+                    DoAnnounce(deviceId, modelName, domain, deviceDomain);
                 }
             };
             _mdns.Start();
+        }
+
+        private void DoAnnounce(string deviceId, string modelName, DomainName domain, DomainName deviceDomain)
+        {
+            var res = new Message();
+            var addresses = MulticastService.GetIPAddresses()
+                .Where(ip => ip.AddressFamily == AddressFamily.InterNetwork);
+            foreach (var address in addresses)
+            {
+                res.Answers.Add(new PTRRecord
+                {
+                    Name = AtemDeviceInfo.ServiceName,
+                    DomainName = domain
+                });
+                res.AdditionalRecords.Add(new TXTRecord
+                {
+                    Name = domain,
+                    Strings = new List<string>
+                    {
+                        "txtvers=1",
+                        $"name=Blackmagic {modelName}",
+                        "class=AtemSwitcher",
+                        "protocol version=0.0",
+                        "internal version=FAKE",
+                        $"unique id={deviceId}"
+                    }
+                });
+                res.AdditionalRecords.Add(new ARecord
+                {
+                    Address = address,
+                    Name = deviceDomain,
+                });
+                res.AdditionalRecords.Add(new SRVRecord
+                {
+                    Name = domain,
+                    Port = 9910,
+                    Priority = 0,
+                    Target = deviceDomain,
+                    Weight = 0
+                });
+                /*
+                res.AdditionalRecords.Add(new NSECRecord
+                {
+                    Name = domain
+                });*/
+            }
+            _mdns.SendAnswer(res);
         }
 
         public void StartPingTimer()
@@ -200,12 +212,13 @@ namespace AtemMock
         {
             try
             {
-
                 foreach (byte[] cmd in _state)
                 {
                     var builder = new OutboundMessageBuilder();
                     if (!builder.TryAddData(cmd))
                         throw new Exception("Failed to build message!");
+                    
+                    Log.InfoFormat("Length {0}",cmd.Length);
 
                     conn.QueueMessage(builder.Create());
                 }
