@@ -24,6 +24,11 @@ namespace AtemMock
             if (!logRepository.Configured) // Default to all on the console
                 BasicConfigurator.Configure(logRepository);
 
+            if (args.Length == 0 || !File.Exists(args[0]))
+            {
+                throw new ArgumentException("Please provide a valid command data file as the first argument");
+            }
+
             //var initPackets = ParseCommands("mini-v8.1.data");
             //var initPackets = ParseCommands("tvshd-v8.1.0.data");
             //var initPackets = ParseCommands("tvshd-v8.2_new.data");
@@ -110,6 +115,8 @@ namespace AtemMock
             var modelNameAndVersion =
                 $"{nameCommand.Name} {versionCommand.ProtocolVersion.ToVersionString().Replace('.', '-')}";
             server.StartAnnounce(modelNameAndVersion, modelNameAndVersion.GetHashCode().ToString());
+
+            Console.WriteLine("Running " + modelNameAndVersion);
 
 
             Console.WriteLine("Press Ctrl+C to terminate...");
